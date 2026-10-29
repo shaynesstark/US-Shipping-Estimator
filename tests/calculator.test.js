@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createShippingCalculator, calculateDimensionalWeight, ShippingValidationError, ShippingLookupError } from '../src/index.js';
 
 const locations = {
-    11103: {
+    10017: {
         latitude: '40.7644',
         longitude: '-73.9235',
         name: 'Astoria',
@@ -60,14 +60,14 @@ const parcel = {
 
 const create = (options) =>
     createShippingCalculator({
-        originZip: '11103',
+        originZip: '10017',
         fetch: mockFetch,
         ...options,
     });
 
 test('origin is configured in code', () => {
     const calculator = create();
-    assert.equal(calculator.originZip, '11103');
+    assert.equal(calculator.originZip, '10017');
 });
 
 test('requires a configured origin', () => {

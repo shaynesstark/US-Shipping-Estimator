@@ -2,7 +2,7 @@ import { createShippingCalculator } from '../src/index.js';
 
 // Configure the shipping origin once.
 const shipping = createShippingCalculator({
-    originZip: '11103',
+    originZip: '10017',
     handlingFee: 1.5,
 });
 

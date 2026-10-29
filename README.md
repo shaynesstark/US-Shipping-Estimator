@@ -42,7 +42,7 @@ Or import directly from the source.
 import { createShippingCalculator } from 'us-shipping-estimator';
 
 const shipping = createShippingCalculator({
-    originZip: '11103',
+    originZip: '10017',
 });
 
 const estimate = await shipping.estimate(
@@ -93,7 +93,7 @@ Import the module in a script with type="module":
 import { createShippingCalculator } from './src/index.js';
 
 const shipping = createShippingCalculator({
-    originZip: '11103',
+    originZip: '10017',
 });
 
 async function calculate(destinationZip, parcel) {
@@ -111,7 +111,7 @@ Create the calculator outside your component:
 import { createShippingCalculator } from 'us-shipping-estimator';
 
 const shipping = createShippingCalculator({
-    originZip: '11103',
+    originZip: '10017',
 });
 
 async function calculateShipping(parcel, destinationZip) {
@@ -130,7 +130,7 @@ See `examples/react/ShippingCalculator.jsx`.
 import { createShippingCalculator } from 'us-shipping-estimator';
 
 const shipping = createShippingCalculator({
-    originZip: '11103',
+    originZip: '10017',
 });
 
 const estimate = await shipping.estimate(
@@ -196,7 +196,7 @@ or licensed carrier zone tables.
 
 ```javascript
 const shipping = createShippingCalculator({
-    originZip: '11103',
+    originZip: '10017',
     handlingFee: 2,
     insuranceFee: 1,
     markupPercent: 5,
