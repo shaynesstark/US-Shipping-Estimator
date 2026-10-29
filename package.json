@@ -1,0 +1,39 @@
+{
+    "name": "us-shipping-estimator",
+    "version": "1.0.0",
+    "description": "Dependency-free, configurable US domestic parcel shipping cost estimator with dimensional weight and transparent rate breakdowns.",
+    "type": "module",
+    "main": "./src/index.cjs",
+    "module": "./src/index.js",
+    "exports": {
+        ".": {
+            "import": "./src/index.js",
+            "require": "./src/index.cjs"
+        }
+    },
+    "types": "./src/index.d.ts",
+    "files": [
+        "src",
+        "README.md",
+        "LICENSE"
+    ],
+    "engines": {
+        "node": ">=18"
+    },
+    "scripts": {
+        "test": "node --test",
+        "demo": "node examples/node.mjs"
+    },
+    "keywords": [
+        "shipping",
+        "calculator",
+        "USPS",
+        "UPS",
+        "FedEx",
+        "dimensional-weight",
+        "domestic",
+        "estimate"
+    ],
+    "license": "MIT",
+    "sideEffects": false
+}
