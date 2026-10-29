@@ -1,6 +1,6 @@
 {
     "name": "us-shipping-estimator",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Dependency-free, configurable US domestic parcel shipping cost estimator with dimensional weight and transparent rate breakdowns.",
     "type": "module",
     "main": "./src/index.cjs",
