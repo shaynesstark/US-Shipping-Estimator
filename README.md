@@ -31,7 +31,7 @@ Supports HTML/JavaScript, React, Vue, Node.js, and TypeScript.
 Install from the local project:
 
 ```bash
-npm install /path/to/us-shipping-estimator
+npm install us-shipping-estimator
 ```
 
 Or import directly from the source.
