@@ -1,111 +1,51 @@
 # US Shipping Estimator
 
-A lightweight, dependency-free JavaScript library for estimating
-domestic United States parcel shipping costs.
+A configurable JavaScript library for estimating domestic US
+shipping costs automatically from origin and destination ZIP codes,
+package weight, and dimensions.
 
-Supports USPS Ground Advantage, UPS Ground, and FedEx Ground
-illustrative rate profiles.
+Supports HTML/JavaScript, React, Vue, Node.js, and TypeScript.
 
 ## Features
 
-- Domestic US shipping only
+- Configure the origin ZIP in your application
+- Customers provide only their destination ZIP
+- Automatic ZIP-code location lookup
+- Approximate shipping-distance calculations
+- No manual shipping-zone input
+- USPS, UPS, and FedEx illustrative service profiles
 - Actual and dimensional weight calculations
-- Pounds, ounces, kilograms, and grams
-- Inches, centimeters, and millimeters
-- Configurable shipping zones
-- Custom carrier rate models
-- Handling fees and insurance
-- Percentage-based markup
-- Detailed cost breakdowns
-- ES modules, TypeScript, and framework integration
+- Metric and imperial measurements
+- Configurable rate tables, handling fees, and markup
+- ZIP lookup caching
+- No API key required for ZIP lookup
 
 ## Requirements
 
-Node.js 18 or newer.
+- Node.js 18+ or a modern web browser
+- Internet connection for ZIP lookup
+- Access to the Zippopotam.us API
 
 ## Installation
 
-Clone the repository and install it locally:
+Install from the local project:
 
 ```bash
 npm install /path/to/us-shipping-estimator
 ```
 
-Or import the source directly:
-
-```javascript
-import { estimateShipping } from './src/index.js';
-```
+Or import directly from the source.
 
 ## Quick start
 
 ```javascript
-import { estimateShipping } from 'us-shipping-estimator';
+import { createShippingCalculator } from 'us-shipping-estimator';
 
-const result = estimateShipping(
-    {
-        weight: 2.5,
-        length: 14,
-        width: 10,
-        height: 6,
-    },
-    {
-        zone: 5,
-    },
-);
+const shipping = createShippingCalculator({
+    originZip: '11103',
+});
 
-console.log(result.cheapest);
-```
-
-## Parcel properties
-
-| Property      | Type   | Default  |
-| ------------- | ------ | -------- |
-| weight        | number | Required |
-| length        | number | Required |
-| width         | number | Required |
-| height        | number | Required |
-| weightUnit    | string | lb       |
-| dimensionUnit | string | in       |
-
-All numerical measurements must be positive.
-
-## Shipping options
-
-| Property       | Description                    |
-| -------------- | ------------------------------ |
-| originZip      | Origin US ZIP                  |
-| destinationZip | Destination US ZIP             |
-| zone           | Shipping zone 1–9              |
-| zoneResolver   | Custom synchronous zone lookup |
-| serviceIds     | Services to compare            |
-| services       | Rate configuration overrides   |
-| handlingFee    | Flat USD handling fee          |
-| insuranceFee   | Flat USD insurance fee         |
-| markupPercent  | Percentage markup              |
-
-ZIP codes are validated but do not automatically determine zones.
-
-If no zone is supplied, zone 5 is assumed.
-
-## Dimensional weight
-
-The calculator uses package dimensions to calculate dimensional
-weight.
-
-Conceptually:
-
-Dimensional weight = length × width × height / divisor
-
-The carrier's dimensional weight and actual weight determine
-billable weight.
-
-Service-specific rules and rounding are configurable.
-
-## Custom rates
-
-```javascript
-const result = estimateShipping(
+const estimate = await shipping.estimate(
     {
         weight: 3,
         length: 12,
@@ -113,150 +53,193 @@ const result = estimateShipping(
         height: 8,
     },
     {
-        zone: 6,
-        services: {
-            'ups-ground': {
-                base: 9.5,
-                perLb: 1.15,
-                zoneStep: 1.2,
-                fuelPercent: 5,
-            },
-        },
+        destinationZip: '90210',
+    },
+);
+
+console.log(estimate.cheapest);
+```
+
+## Configuring the origin ZIP
+
+Set the origin once when initializing the calculator.
+
+```javascript
+const shipping = createShippingCalculator({
+    originZip: '10001',
+});
+```
+
+The customer never needs to enter the origin ZIP.
+
+## Package measurements
+
+| Property      | Description    | Default  |
+| ------------- | -------------- | -------- |
+| weight        | Package weight | Required |
+| length        | Longest side   | Required |
+| width         | Second side    | Required |
+| height        | Third side     | Required |
+| weightUnit    | lb, oz, kg, g  | lb       |
+| dimensionUnit | in, cm, mm     | in       |
+
+All measurements must be positive numbers.
+
+## HTML and JavaScript
+
+Import the module in a script with type="module":
+
+```javascript
+import { createShippingCalculator } from './src/index.js';
+
+const shipping = createShippingCalculator({
+    originZip: '11103',
+});
+
+async function calculate(destinationZip, parcel) {
+    return await shipping.estimate(parcel, { destinationZip });
+}
+```
+
+See `examples/vanilla/index.html` for a complete form.
+
+## React
+
+Create the calculator outside your component:
+
+```jsx
+import { createShippingCalculator } from 'us-shipping-estimator';
+
+const shipping = createShippingCalculator({
+    originZip: '11103',
+});
+
+async function calculateShipping(parcel, destinationZip) {
+    return await shipping.estimate(parcel, { destinationZip });
+}
+```
+
+Call this inside an async event handler and store the
+result in React state.
+
+See `examples/react/ShippingCalculator.jsx`.
+
+## Vue 3
+
+```javascript
+import { createShippingCalculator } from 'us-shipping-estimator';
+
+const shipping = createShippingCalculator({
+    originZip: '11103',
+});
+
+const estimate = await shipping.estimate(
+    {
+        weight: 2,
+        length: 12,
+        width: 10,
+        height: 8,
+    },
+    {
+        destinationZip: '90210',
     },
 );
 ```
 
-## Basic HTML, CSS, and JavaScript
+See `examples/vue/ShippingCalculator.vue`.
 
-Import the JavaScript module using a module script.
+## Automatic distance calculation
 
-```html
-<form id="shipping-form">
-    <input id="weight" type="number" step="any" placeholder="Weight (lb)" required />
-    <input id="length" type="number" step="any" placeholder="Length (in)" required />
-    <input id="width" type="number" step="any" placeholder="Width (in)" required />
-    <input id="height" type="number" step="any" placeholder="Height (in)" required />
-    <button type="submit">Calculate</button>
-</form>
+The calculator:
 
-<p id="result"></p>
+1. Looks up the origin ZIP coordinates.
+2. Looks up the destination ZIP coordinates.
+3. Calculates straight-line distance using the Haversine formula.
+4. Maps the distance to an approximate cost band.
+5. Applies configured service pricing.
+6. Returns estimates ranked by cost.
 
-<script type="module">
-    import { estimateShipping } from './src/index.js';
+ZIP lookup data comes from Zippopotam.us.
 
-    document.querySelector('#shipping-form').addEventListener('submit', (event) => {
-        event.preventDefault();
+The returned distance is approximate straight-line distance,
+not road distance or carrier transport distance.
 
-        const value = (id) => Number(document.getElementById(id).value);
+## Important accuracy limitations
 
-        try {
-            const result = estimateShipping({
-                weight: value('weight'),
-                length: value('length'),
-                width: value('width'),
-                height: value('height'),
-            });
+The automatic distance bands are NOT official shipping zones.
 
-            document.getElementById('result').textContent = `Estimated shipping: $${result.cheapest.estimatedTotal.toFixed(2)}`;
-        } catch (error) {
-            document.getElementById('result').textContent = error.message;
-        }
-    });
-</script>
+Actual USPS, UPS, and FedEx zone assignments may depend on
+carrier-specific ZIP-pair tables, routing networks, shipping
+services, and exceptions.
+
+The included shipping prices are illustrative and are NOT
+official carrier rates.
+
+The current model does not fully account for:
+
+- Carrier-specific zone charts
+- Alaska, Hawaii, and territorial rate exceptions
+- Residential and rural delivery surcharges
+- Fuel adjustments
+- Peak-season surcharges
+- Large package handling charges
+- Negotiated shipping contracts
+- Service availability by destination
+
+Do not use illustrative estimates as guaranteed checkout
+shipping prices.
+
+For production billing, integrate official carrier rates
+or licensed carrier zone tables.
+
+## Custom pricing
+
+```javascript
+const shipping = createShippingCalculator({
+    originZip: '11103',
+    handlingFee: 2,
+    insuranceFee: 1,
+    markupPercent: 5,
+    services: {
+        'ups-ground': {
+            base: 9.5,
+            perLb: 1.15,
+            zoneStep: 1.2,
+            fuelPercent: 5,
+        },
+    },
+});
 ```
 
-Serve the site through an HTTP development server rather than
-opening the HTML file directly.
+The `zoneStep` setting is a rate-model parameter for
+automatically computed distance bands, not an input
+for manually selected carrier zones.
 
-## React
+## Error handling
 
-```jsx
-import { useState } from 'react';
-import { estimateShipping } from 'us-shipping-estimator';
-
-export default function ShippingCalculator() {
-    const [result, setResult] = useState(null);
-
-    function calculate() {
-        const estimate = estimateShipping(
-            {
-                weight: 2,
-                length: 12,
-                width: 10,
-                height: 8,
-            },
-            {
-                zone: 5,
-            },
-        );
-
-        setResult(estimate);
-    }
-
-    return (
-        <div>
-            <button onClick={calculate}>Calculate shipping</button>
-            {result && <p>${result.cheapest.estimatedTotal.toFixed(2)}</p>}
-        </div>
-    );
+```javascript
+try {
+    const result = await shipping.estimate(parcel, { destinationZip });
+    console.log(result);
+} catch (error) {
+    console.error(error.message);
 }
 ```
 
-## Vue 3
-
-```vue
-<script setup>
-    import { ref } from 'vue';
-    import { estimateShipping } from 'us-shipping-estimator';
-
-    const result = ref(null);
-
-    function calculate() {
-        result.value = estimateShipping(
-            {
-                weight: 2,
-                length: 12,
-                width: 10,
-                height: 8,
-            },
-            {
-                zone: 5,
-            },
-        );
-    }
-</script>
-
-<template>
-    <button @click="calculate">Calculate shipping</button>
-    <p v-if="result">${{ result.cheapest.estimatedTotal.toFixed(2) }}</p>
-</template>
-```
+Invalid ZIP codes and network lookup failures produce errors
+instead of silently assuming a default location or zone.
 
 ## Testing
 
 ```bash
+npm run build
 npm test
+npm run demo
 ```
 
-## Important pricing limitations
+Automated tests use a mocked ZIP lookup so tests do not
+depend on an active network connection.
 
-The included rates are illustrative and are not official
-USPS, UPS, or FedEx prices.
+## Licensing
 
-Shipping estimates may differ from actual costs because of:
-
-- Shipping zones and negotiated rates
-- Residential delivery fees
-- Delivery area surcharges
-- Fuel surcharges
-- Oversized package fees
-- Peak-season pricing
-- Carrier-specific rounding and dimensional-weight rules
-
-For production checkout, configure accurate rates and
-a reliable shipping-zone resolver or integrate a live
-carrier rate service.
-
-## License
-
-MIT License. See LICENSE for details.
+MIT License. See LICENSE.

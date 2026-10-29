@@ -1,5 +1,4 @@
 export type WeightUnit = 'lb' | 'oz' | 'kg' | 'g';
-
 export type DimensionUnit = 'in' | 'cm' | 'mm';
 
 export interface Parcel {
@@ -25,31 +24,39 @@ export interface ServiceConfig {
     fuelPercent: number;
 }
 
-export interface ShippingOptions {
-    originZip?: string;
-    destinationZip?: string;
-    originCountry?: 'US';
-    destinationCountry?: 'US';
-    zone?: number;
-    zoneResolver?: (postalCodes: { originZip?: string; destinationZip?: string }) => number | undefined;
-    serviceIds?: string[];
-    services?: Record<string, Partial<ServiceConfig> | ServiceConfig>;
+export interface CalculatorConfig {
+    originZip: string;
+    services?: Record<string, Partial<ServiceConfig>>;
     handlingFee?: number;
     insuranceFee?: number;
     markupPercent?: number;
+    fetch?: typeof globalThis.fetch;
 }
 
-export interface Breakdown {
+export interface EstimateOptions {
+    destinationZip: string;
+    serviceIds?: string[];
+}
+
+export interface ZipLocation {
+    zip: string;
+    city: string;
+    state: string;
+    latitude: number;
+    longitude: number;
+}
+
+export interface ShippingBreakdown {
     base: number;
     weightCharge: number;
-    zoneCharge: number;
+    distanceCharge: number;
     fuel: number;
     handling: number;
     insurance: number;
     markup: number;
 }
 
-export type Quote =
+export type ShippingQuote =
     | {
           id: string;
           label: string;
@@ -67,25 +74,25 @@ export type Quote =
           actualWeightLb: number;
           dimensionalWeightLb: number;
           billableWeightLb: number;
-          volumeCubicIn: number;
-          billedDimensionsIn: number[];
-          breakdown: Breakdown;
-          estimationMethod: 'illustrative-rate-model';
+          breakdown: ShippingBreakdown;
+          estimationMethod: 'approximate-distance-model';
       };
 
-export interface Estimate {
+export interface ShippingEstimate {
+    originZip: string;
+    destinationZip: string;
+    origin: ZipLocation;
+    destination: ZipLocation;
+    distanceMiles: number;
     currency: 'USD';
     domesticOnly: true;
-    zone: number;
-    zoneAssumed: boolean;
-    originZip: string | null;
-    destinationZip: string | null;
-    cheapest: Extract<Quote, { available: true }> | null;
-    quotes: Quote[];
+    cheapest: Extract<ShippingQuote, { available: true }> | null;
+    quotes: ShippingQuote[];
     disclaimer: string;
 }
 
 export class ShippingValidationError extends Error {}
+export class ShippingLookupError extends Error {}
 
 export const SERVICE_IDS: readonly string[];
 
@@ -94,7 +101,6 @@ export function calculateDimensionalWeight(
     options?: {
         divisor?: number;
         thresholdCubicIn?: number;
-        rounding?: 'up' | 'nearest';
     },
 ): {
     dimensionalWeightLb: number;
@@ -103,8 +109,7 @@ export function calculateDimensionalWeight(
     divisor: number;
 };
 
-export function estimateShipping(parcel: Parcel, options?: ShippingOptions): Estimate;
-
-export function createShippingCalculator(defaultOptions?: ShippingOptions): {
-    estimate(parcel: Parcel, options?: ShippingOptions): Estimate;
+export function createShippingCalculator(config: CalculatorConfig): {
+    originZip: string;
+    estimate(parcel: Parcel, options: EstimateOptions): Promise<ShippingEstimate>;
 };

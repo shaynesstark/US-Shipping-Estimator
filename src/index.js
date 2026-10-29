@@ -1,4 +1,12 @@
-const DEFAULT_SERVICES = Object.freeze({
+/**
+ * US Shipping Estimator
+ * Automatic ZIP-based domestic shipping estimates.
+ *
+ * Prices and distance bands are illustrative, not official
+ * carrier quotations or verified carrier zones.
+ */
+
+const DEFAULT_SERVICES = {
     'usps-ground': {
         label: 'USPS Ground Advantage',
         carrier: 'USPS',
@@ -37,7 +45,9 @@ const DEFAULT_SERVICES = Object.freeze({
         zoneStep: 1.09,
         fuelPercent: 0,
     },
-});
+};
+
+export const SERVICE_IDS = Object.freeze(Object.keys(DEFAULT_SERVICES));
 
 export class ShippingValidationError extends Error {
     constructor(message) {
@@ -46,141 +56,74 @@ export class ShippingValidationError extends Error {
     }
 }
 
-const finite = (v, name, allowZero = false) => {
-    if (typeof v !== 'number' || !Number.isFinite(v) || (allowZero ? v < 0 : v <= 0)) {
+export class ShippingLookupError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'ShippingLookupError';
+    }
+}
+
+const roundMoney = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+function number(value, name, allowZero = false) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || (allowZero ? value < 0 : value <= 0)) {
         throw new ShippingValidationError(`${name} must be a ${allowZero ? 'nonnegative' : 'positive'} finite number`);
     }
-    return v;
-};
+    return value;
+}
 
-const money = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+function normalizeZip(zip) {
+    if (typeof zip !== 'string' || !/^\d{5}(?:-\d{4})?$/.test(zip)) {
+        throw new ShippingValidationError('ZIP must be a valid 5-digit US ZIP or ZIP+4 string');
+    }
+    return zip.slice(0, 5);
+}
 
-const positiveMoney = (v, name) => finite(v, name, true);
-
-const percent = (v, name) => finite(v, name, true);
-
-const weightToLb = (value, unit) => {
-    if (unit === 'lb') return value;
-    if (unit === 'oz') return value / 16;
-    if (unit === 'kg') return value * 2.2046226218;
-    if (unit === 'g') return value / 453.59237;
-
-    throw new ShippingValidationError('weightUnit must be lb, oz, kg, or g');
-};
-
-const lengthToIn = (value, unit) => {
-    if (unit === 'in') return value;
-    if (unit === 'cm') return value / 2.54;
-    if (unit === 'mm') return value / 25.4;
-
-    throw new ShippingValidationError('dimensionUnit must be in, cm, or mm');
-};
-
-const normalize = (parcel) => {
+function normalizeParcel(parcel) {
     if (!parcel || typeof parcel !== 'object' || Array.isArray(parcel)) {
         throw new ShippingValidationError('parcel must be an object');
     }
 
+    const weightConversions = {
+        lb: 1,
+        oz: 1 / 16,
+        kg: 2.2046226218,
+        g: 1 / 453.59237,
+    };
+
+    const dimensionConversions = {
+        in: 1,
+        cm: 1 / 2.54,
+        mm: 1 / 25.4,
+    };
+
     const weightUnit = parcel.weightUnit ?? 'lb';
     const dimensionUnit = parcel.dimensionUnit ?? 'in';
 
-    const weightLb = weightToLb(finite(parcel.weight, 'weight'), weightUnit);
+    if (!(weightUnit in weightConversions)) {
+        throw new ShippingValidationError('Invalid weight unit');
+    }
 
-    const dimensions = ['length', 'width', 'height'].map((key) => lengthToIn(finite(parcel[key], key), dimensionUnit));
+    if (!(dimensionUnit in dimensionConversions)) {
+        throw new ShippingValidationError('Invalid dimension unit');
+    }
 
-    dimensions.sort((a, b) => b - a);
-
-    const [lengthIn, widthIn, heightIn] = dimensions;
+    const dimensions = ['length', 'width', 'height'].map((key) => number(parcel[key], key) * dimensionConversions[dimensionUnit]).sort((a, b) => b - a);
 
     return {
-        weightLb,
-        lengthIn,
-        widthIn,
-        heightIn,
+        weightLb: number(parcel.weight, 'weight') * weightConversions[weightUnit],
+        dimensions,
     };
-};
+}
 
-const validZip = (value) => typeof value === 'string' && /^\d{5}(?:-\d{4})?$/.test(value);
+export function calculateDimensionalWeight(parcel, { divisor = 139, thresholdCubicIn = 0 } = {}) {
+    number(divisor, 'divisor');
+    number(thresholdCubicIn, 'thresholdCubicIn', true);
 
-const validateDomestic = (options) => {
-    if (options.originCountry !== undefined && options.originCountry !== 'US') {
-        throw new ShippingValidationError('Only US originCountry is supported');
-    }
+    const p = normalizeParcel(parcel);
+    const billedDimensionsIn = p.dimensions.map(Math.ceil);
 
-    if (options.destinationCountry !== undefined && options.destinationCountry !== 'US') {
-        throw new ShippingValidationError('Only US destinationCountry is supported');
-    }
-
-    for (const key of ['originZip', 'destinationZip']) {
-        if (options[key] !== undefined && !validZip(options[key])) {
-            throw new ShippingValidationError(`${key} must be a 5-digit US ZIP or ZIP+4 string`);
-        }
-    }
-};
-
-const configure = (services = {}) => {
-    if (!services || typeof services !== 'object' || Array.isArray(services)) {
-        throw new ShippingValidationError('services must be an object');
-    }
-
-    const merged = {};
-
-    for (const [id, defaults] of Object.entries(DEFAULT_SERVICES)) {
-        merged[id] = {
-            ...defaults,
-            ...(services[id] ?? {}),
-        };
-    }
-
-    for (const [id, config] of Object.entries(services)) {
-        if (!config || typeof config !== 'object' || Array.isArray(config)) {
-            throw new ShippingValidationError(`services.${id} must be an object`);
-        }
-
-        if (!merged[id]) {
-            merged[id] = { ...config };
-        }
-    }
-
-    for (const [id, config] of Object.entries(merged)) {
-        if (!config.label || !config.carrier) {
-            throw new ShippingValidationError(`services.${id} requires label and carrier`);
-        }
-
-        for (const key of ['divisor', 'maxWeightLb', 'base', 'perLb', 'zoneStep', 'fuelPercent']) {
-            finite(config[key], `services.${id}.${key}`, key !== 'divisor' && key !== 'maxWeightLb');
-        }
-
-        finite(config.dimThresholdCubicIn, `services.${id}.dimThresholdCubicIn`, true);
-
-        for (const key of ['maxLengthIn', 'maxLengthPlusGirthIn']) {
-            if (config[key] !== undefined) {
-                finite(config[key], `services.${id}.${key}`);
-            }
-        }
-    }
-
-    return merged;
-};
-
-export const SERVICE_IDS = Object.freeze(Object.keys(DEFAULT_SERVICES));
-
-export function calculateDimensionalWeight(parcel, { divisor = 139, thresholdCubicIn = 0, rounding = 'up' } = {}) {
-    finite(divisor, 'divisor');
-
-    finite(thresholdCubicIn, 'thresholdCubicIn', true);
-
-    if (!['up', 'nearest'].includes(rounding)) {
-        throw new ShippingValidationError('rounding must be up or nearest');
-    }
-
-    const p = normalize(parcel);
-
-    const round = rounding === 'up' ? Math.ceil : Math.round;
-
-    const billedDimensionsIn = [p.lengthIn, p.widthIn, p.heightIn].map(round);
-
-    const volumeCubicIn = billedDimensionsIn.reduce((a, b) => a * b, 1);
+    const volumeCubicIn = billedDimensionsIn.reduce((total, dimension) => total * dimension, 1);
 
     return {
         dimensionalWeightLb: volumeCubicIn > thresholdCubicIn ? Math.ceil(volumeCubicIn / divisor) : 0,
@@ -190,167 +133,252 @@ export function calculateDimensionalWeight(parcel, { divisor = 139, thresholdCub
     };
 }
 
-function checkFit(parcel, config, dim) {
-    const lengthPlusGirth = dim.billedDimensionsIn[0] + 2 * (dim.billedDimensionsIn[1] + dim.billedDimensionsIn[2]);
+function distanceMiles(a, b) {
+    const toRadians = (degrees) => (degrees * Math.PI) / 180;
 
-    if (parcel.weightLb > config.maxWeightLb) {
-        return 'actual weight exceeds service limit';
-    }
+    const lat1 = toRadians(a.latitude);
+    const lat2 = toRadians(b.latitude);
+    const deltaLat = lat2 - lat1;
+    const deltaLon = toRadians(b.longitude - a.longitude);
 
-    if (config.maxLengthIn && dim.billedDimensionsIn[0] > config.maxLengthIn) {
-        return 'length exceeds service limit';
-    }
+    const haversine = Math.sin(deltaLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
 
-    if (config.maxLengthPlusGirthIn && lengthPlusGirth > config.maxLengthPlusGirthIn) {
-        return 'length plus girth exceeds service limit';
-    }
-
-    return null;
+    return 3958.7613 * 2 * Math.asin(Math.sqrt(Math.min(1, haversine)));
 }
 
 /**
- * Returns illustrative USD shipping estimates.
- * These are not live carrier-issued prices.
+ * Approximate distance-to-zone classification.
  *
- * Zone 5 is assumed when no shipping zone
- * or synchronous zone resolver is supplied.
+ * Not official USPS, UPS, or FedEx zone data.
+ * The 1-9 bands are a modeling assumption only.
  */
-export function estimateShipping(parcel, options = {}) {
-    if (!options || typeof options !== 'object' || Array.isArray(options)) {
-        throw new ShippingValidationError('options must be an object');
+function approximateDistanceBand(miles) {
+    if (miles <= 50) return 1;
+    if (miles <= 150) return 2;
+    if (miles <= 300) return 3;
+    if (miles <= 600) return 4;
+    if (miles <= 1000) return 5;
+    if (miles <= 1400) return 6;
+    if (miles <= 1800) return 7;
+    if (miles <= 3000) return 8;
+    return 9;
+}
+
+function createZipLookup(fetcher = globalThis.fetch) {
+    if (typeof fetcher !== 'function') {
+        throw new ShippingValidationError('A fetch implementation is required');
     }
 
-    validateDomestic(options);
+    const cache = new Map();
 
-    const p = normalize(parcel);
-    const services = configure(options.services);
+    return async function lookupZip(zip) {
+        const normalizedZip = normalizeZip(zip);
 
-    const selected = options.serviceIds ?? Object.keys(services);
-
-    if (!Array.isArray(selected) || selected.length === 0) {
-        throw new ShippingValidationError('serviceIds must be a nonempty array');
-    }
-
-    const resolved = options.zoneResolver
-        ? options.zoneResolver({
-              originZip: options.originZip,
-              destinationZip: options.destinationZip,
-          })
-        : undefined;
-
-    if (resolved !== undefined && typeof resolved?.then === 'function') {
-        throw new ShippingValidationError('zoneResolver must return synchronously');
-    }
-
-    const zone = options.zone ?? resolved ?? 5;
-
-    if (!Number.isInteger(zone) || zone < 1 || zone > 9) {
-        throw new ShippingValidationError('zone must be an integer between 1 and 9');
-    }
-
-    const assumedZone = options.zone === undefined && resolved === undefined;
-
-    const handling = positiveMoney(options.handlingFee ?? 0, 'handlingFee');
-
-    const insurance = positiveMoney(options.insuranceFee ?? 0, 'insuranceFee');
-
-    const markupPercent = percent(options.markupPercent ?? 0, 'markupPercent');
-
-    const quotes = selected.map((id) => {
-        const config = services[id];
-
-        if (!config) {
-            throw new ShippingValidationError(`Unknown service: ${id}`);
+        if (cache.has(normalizedZip)) {
+            return cache.get(normalizedZip);
         }
 
-        const dim = calculateDimensionalWeight(parcel, {
-            divisor: config.divisor,
-            thresholdCubicIn: config.dimThresholdCubicIn,
-            rounding: config.carrier === 'USPS' ? 'up' : 'nearest',
-        });
+        const promise = (async () => {
+            let response;
 
-        const unavailableReason = checkFit(p, config, dim);
+            try {
+                response = await fetcher(`https://api.zippopotam.us/us/${normalizedZip}`);
+            } catch {
+                throw new ShippingLookupError(`ZIP lookup failed for ${normalizedZip}. Check the network connection.`);
+            }
 
-        const billableWeightLb = Math.max(Math.ceil(p.weightLb), dim.dimensionalWeightLb);
+            if (!response.ok) {
+                throw new ShippingLookupError(response.status === 404 ? `ZIP ${normalizedZip} was not found` : `ZIP lookup returned HTTP ${response.status}`);
+            }
 
-        if (unavailableReason) {
+            let data;
+
+            try {
+                data = await response.json();
+            } catch {
+                throw new ShippingLookupError('ZIP lookup returned invalid JSON');
+            }
+
+            const place = data.places?.[0];
+
+            const latitude = Number(place?.latitude);
+            const longitude = Number(place?.longitude);
+
+            if (place == null || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                throw new ShippingLookupError(`No valid coordinates for ZIP ${normalizedZip}`);
+            }
+
+            return {
+                zip: normalizedZip,
+                city: place['place name'],
+                state: place['state abbreviation'],
+                latitude,
+                longitude,
+            };
+        })();
+
+        cache.set(normalizedZip, promise);
+
+        try {
+            return await promise;
+        } catch (error) {
+            cache.delete(normalizedZip);
+            throw error;
+        }
+    };
+}
+
+export function createShippingCalculator({ originZip, services = {}, handlingFee = 0, insuranceFee = 0, markupPercent = 0, fetch: customFetch } = {}) {
+    const origin = normalizeZip(originZip);
+
+    number(handlingFee, 'handlingFee', true);
+    number(insuranceFee, 'insuranceFee', true);
+    number(markupPercent, 'markupPercent', true);
+
+    if (!services || typeof services !== 'object' || Array.isArray(services)) {
+        throw new ShippingValidationError('services must be an object');
+    }
+
+    const configurations = {};
+
+    for (const [id, defaults] of Object.entries(DEFAULT_SERVICES)) {
+        configurations[id] = {
+            ...defaults,
+            ...(services[id] ?? {}),
+        };
+    }
+
+    for (const [id, override] of Object.entries(services)) {
+        if (!override || typeof override !== 'object' || Array.isArray(override)) {
+            throw new ShippingValidationError(`Invalid service: ${id}`);
+        }
+        if (!configurations[id]) {
+            configurations[id] = { ...override };
+        }
+    }
+
+    for (const [id, service] of Object.entries(configurations)) {
+        if (typeof service.label !== 'string' || typeof service.carrier !== 'string') {
+            throw new ShippingValidationError(`${id} requires label and carrier`);
+        }
+
+        for (const key of ['divisor', 'maxWeightLb', 'base', 'perLb', 'zoneStep', 'fuelPercent', 'dimThresholdCubicIn']) {
+            number(service[key], `${id}.${key}`, !['divisor', 'maxWeightLb'].includes(key));
+        }
+
+        for (const key of ['maxLengthIn', 'maxLengthPlusGirthIn']) {
+            if (service[key] != null) {
+                number(service[key], `${id}.${key}`);
+            }
+        }
+    }
+
+    const lookup = createZipLookup(customFetch);
+
+    async function estimate(parcel, { destinationZip, serviceIds = Object.keys(configurations) } = {}) {
+        const destination = normalizeZip(destinationZip);
+        const normalizedParcel = normalizeParcel(parcel);
+
+        if (!Array.isArray(serviceIds) || serviceIds.length === 0) {
+            throw new ShippingValidationError('serviceIds must be a nonempty array');
+        }
+
+        const [from, to] = await Promise.all([lookup(origin), lookup(destination)]);
+
+        const miles = distanceMiles(from, to);
+        const distanceBand = approximateDistanceBand(miles);
+
+        const quotes = serviceIds.map((id) => {
+            const config = configurations[id];
+
+            if (!config) {
+                throw new ShippingValidationError(`Unknown service: ${id}`);
+            }
+
+            const dim = calculateDimensionalWeight(parcel, {
+                divisor: config.divisor,
+                thresholdCubicIn: config.dimThresholdCubicIn,
+            });
+
+            const [length, width, height] = dim.billedDimensionsIn;
+
+            const lengthPlusGirth = length + 2 * (width + height);
+
+            let reason = null;
+
+            if (normalizedParcel.weightLb > config.maxWeightLb) {
+                reason = 'Actual weight exceeds service limit';
+            } else if (config.maxLengthIn && length > config.maxLengthIn) {
+                reason = 'Length exceeds service limit';
+            } else if (config.maxLengthPlusGirthIn && lengthPlusGirth > config.maxLengthPlusGirthIn) {
+                reason = 'Length plus girth exceeds service limit';
+            }
+
+            if (reason) {
+                return {
+                    id,
+                    label: config.label,
+                    carrier: config.carrier,
+                    available: false,
+                    reason,
+                };
+            }
+
+            const billableWeightLb = Math.max(Math.ceil(normalizedParcel.weightLb), dim.dimensionalWeightLb);
+
+            const base = roundMoney(config.base);
+            const weightCharge = roundMoney(billableWeightLb * config.perLb);
+            const distanceCharge = roundMoney(Math.max(0, distanceBand - 1) * config.zoneStep);
+
+            const transportation = roundMoney(base + weightCharge + distanceCharge);
+
+            const fuel = roundMoney((transportation * config.fuelPercent) / 100);
+
+            const markup = roundMoney(((transportation + fuel + handlingFee + insuranceFee) * markupPercent) / 100);
+
+            const estimatedTotal = roundMoney(transportation + fuel + handlingFee + insuranceFee + markup);
+
             return {
                 id,
                 label: config.label,
                 carrier: config.carrier,
-                available: false,
-                reason: unavailableReason,
+                available: true,
+                currency: 'USD',
+                estimatedTotal,
+                actualWeightLb: roundMoney(normalizedParcel.weightLb),
+                dimensionalWeightLb: dim.dimensionalWeightLb,
+                billableWeightLb,
+                breakdown: {
+                    base,
+                    weightCharge,
+                    distanceCharge,
+                    fuel,
+                    handling: roundMoney(handlingFee),
+                    insurance: roundMoney(insuranceFee),
+                    markup,
+                },
+                estimationMethod: 'approximate-distance-model',
             };
-        }
+        });
 
-        const base = money(config.base);
-
-        const weightCharge = money(billableWeightLb * config.perLb);
-
-        const zoneCharge = money(Math.max(0, zone - 1) * config.zoneStep);
-
-        const transportation = money(base + weightCharge + zoneCharge);
-
-        const fuel = money((transportation * config.fuelPercent) / 100);
-
-        const markup = money(((transportation + fuel + handling + insurance) * markupPercent) / 100);
-
-        const total = money(transportation + fuel + handling + insurance + markup);
+        const available = quotes.filter((q) => q.available).sort((a, b) => a.estimatedTotal - b.estimatedTotal);
 
         return {
-            id,
-            label: config.label,
-            carrier: config.carrier,
-            available: true,
+            originZip: origin,
+            destinationZip: destination,
+            origin: from,
+            destination: to,
+            distanceMiles: Math.round(miles),
             currency: 'USD',
-            estimatedTotal: total,
-            actualWeightLb: money(p.weightLb),
-            dimensionalWeightLb: dim.dimensionalWeightLb,
-            billableWeightLb,
-            volumeCubicIn: dim.volumeCubicIn,
-            billedDimensionsIn: dim.billedDimensionsIn,
-            breakdown: {
-                base,
-                weightCharge,
-                zoneCharge,
-                fuel,
-                handling,
-                insurance,
-                markup,
-            },
-            estimationMethod: 'illustrative-rate-model',
+            domesticOnly: true,
+            cheapest: available[0] ?? null,
+            quotes: [...available, ...quotes.filter((q) => !q.available)],
+            disclaimer: 'Illustrative estimates based on ZIP-coordinate distance. ' + 'Distance bands are not official carrier zones. ' + 'Rates do not include all possible carrier surcharges.',
         };
-    });
-
-    const available = quotes.filter((q) => q.available).sort((a, b) => a.estimatedTotal - b.estimatedTotal);
-
-    return {
-        currency: 'USD',
-        domesticOnly: true,
-        zone,
-        zoneAssumed: assumedZone,
-        originZip: options.originZip ?? null,
-        destinationZip: options.destinationZip ?? null,
-        cheapest: available[0] ?? null,
-        quotes: [...available, ...quotes.filter((q) => !q.available)],
-        disclaimer: 'Budget estimates only. Default rate tables are illustrative, not carrier-published prices, live quotes, or negotiated rates. Excludes service-specific surcharges and taxes unless configured.',
-    };
-}
-
-export function createShippingCalculator(defaultOptions = {}) {
-    if (!defaultOptions || typeof defaultOptions !== 'object' || Array.isArray(defaultOptions)) {
-        throw new ShippingValidationError('defaultOptions must be an object');
     }
 
     return {
-        estimate: (parcel, options = {}) =>
-            estimateShipping(parcel, {
-                ...defaultOptions,
-                ...options,
-                services: {
-                    ...(defaultOptions.services ?? {}),
-                    ...(options.services ?? {}),
-                },
-            }),
+        originZip: origin,
+        estimate,
     };
 }

@@ -1,34 +1,42 @@
 <script setup>
     import { reactive, ref } from 'vue';
+    import { createShippingCalculator } from 'us-shipping-estimator';
 
-    import { estimateShipping } from 'us-shipping-estimator';
+    // Set your business's shipping origin here.
+    const shipping = createShippingCalculator({
+        originZip: '10017',
+    });
 
     const parcel = reactive({
-        weight: 2,
-        length: 12,
-        width: 9,
+        weight: 2.5,
+        length: 14,
+        width: 10,
         height: 6,
     });
 
-    const zone = ref(5);
+    const destinationZip = ref('');
     const result = ref(null);
     const error = ref('');
+    const loading = ref(false);
 
-    function calculate() {
+    async function calculate() {
+        loading.value = true;
+        error.value = '';
+        result.value = null;
+
         try {
-            result.value = estimateShipping({ ...parcel }, { zone: zone.value });
-
-            error.value = '';
+            result.value = await shipping.estimate({ ...parcel }, { destinationZip: destinationZip.value });
         } catch (err) {
             error.value = err.message;
-            result.value = null;
+        } finally {
+            loading.value = false;
         }
     }
 </script>
 
 <template>
     <section class="shipping-calculator">
-        <h2>Shipping estimator</h2>
+        <h2>Calculate shipping</h2>
 
         <form @submit.prevent="calculate">
             <label v-for="field in ['weight', 'length', 'width', 'height']" :key="field">
@@ -38,12 +46,13 @@
             </label>
 
             <label>
-                Zone
-
-                <input v-model.number="zone" type="number" min="1" max="9" step="1" required />
+                Destination ZIP
+                <input v-model="destinationZip" type="text" inputmode="numeric" pattern="[0-9]{5}(-[0-9]{4})?" required />
             </label>
 
-            <button type="submit">Get estimate</button>
+            <button type="submit" :disabled="loading">
+                {{ loading ? 'Calculating...' : 'Get estimate' }}
+            </button>
         </form>
 
         <p v-if="error" role="alert">
@@ -52,20 +61,16 @@
 
         <template v-if="result">
             <p>
-                Estimated US shipping · USD · Zone
-                {{ result.zone }}
+                Estimated distance:
+                {{ result.distanceMiles }} miles
             </p>
 
-            <ul>
-                <li v-for="quote in result.quotes" :key="quote.id">
-                    {{ quote.label }}:
-                    {{ quote.available ? '$' + quote.estimatedTotal.toFixed(2) : quote.reason }}
-                </li>
-            </ul>
+            <p v-for="quote in result.quotes" :key="quote.id">
+                {{ quote.label }}:
+                {{ quote.available ? '$' + quote.estimatedTotal.toFixed(2) : quote.reason }}
+            </p>
 
-            <small>
-                {{ result.disclaimer }}
-            </small>
+            <small>{{ result.disclaimer }}</small>
         </template>
     </section>
 </template>

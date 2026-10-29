@@ -21,6 +21,8 @@
         "node": ">=18"
     },
     "scripts": {
+        "build": "node scripts/build-cjs.mjs",
+        "prepack": "npm run build",
         "test": "node --test",
         "demo": "node examples/node.mjs"
     },

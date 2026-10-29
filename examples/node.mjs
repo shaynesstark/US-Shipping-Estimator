@@ -1,25 +1,39 @@
-import { estimateShipping } from '../src/index.js';
+import { createShippingCalculator } from '../src/index.js';
 
-const result = estimateShipping(
-    {
-        weight: 2.5,
-        length: 14,
-        width: 10,
-        height: 6,
-    },
-    {
-        originZip: '11103',
-        destinationZip: '90210',
-        zone: 8,
-        handlingFee: 1.5,
-    },
-);
+// Configure the shipping origin once.
+const shipping = createShippingCalculator({
+    originZip: '11103',
+    handlingFee: 1.5,
+});
 
-console.table(
-    result.quotes.map((q) => ({
-        service: q.label,
-        estimatedUSD: q.available ? q.estimatedTotal : 'unavailable',
-    })),
-);
+async function main() {
+    const estimate = await shipping.estimate(
+        {
+            weight: 2.5,
+            length: 14,
+            width: 10,
+            height: 6,
+        },
+        {
+            destinationZip: '90210',
+        },
+    );
 
-console.log('Note:', result.disclaimer);
+    console.log(`Shipping from ${estimate.originZip} to ${estimate.destinationZip}`);
+
+    console.log(`Approximate distance: ${estimate.distanceMiles} miles`);
+
+    console.table(
+        estimate.quotes.map((quote) => ({
+            service: quote.label,
+            estimate: quote.available ? `$${quote.estimatedTotal.toFixed(2)}` : 'Unavailable',
+        })),
+    );
+
+    console.log(estimate.disclaimer);
+}
+
+main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+});
